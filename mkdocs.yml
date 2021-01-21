@@ -17,9 +17,10 @@ theme:
     code: 'Roboto Mono'
 
 markdown_extensions:
-  # Code highlighting in ``` ``` blocks
-  - codehilite:
-      guess_lang: true
+  # Code highlighting in ``` ``` blocks, superseeds codehilite
+  - pymdownx.highlight
+  # allows for the nesting of code blocks inside other blocks
+  - pymdownx.superfences
   # Table of Contents
   - toc:
       permalink: true
