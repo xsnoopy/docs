@@ -1,3 +1,5 @@
+## Pi-hole as All-Around DNS Solution
+
 ### The problem: Whom can you trust?
 
 Pi-hole includes a caching and *forwarding* DNS server, now known as *FTL*DNS. After applying the blocking lists, it forwards requests made by the clients to configured upstream DNS server(s). However, as has been mentioned by several users in the past, this leads to some privacy concerns as it ultimately raises the question: _Whom can you trust?_ Recently, more and more small (and not so small) DNS upstream providers have appeared on the market, advertising free and private DNS service, but how can you know that they keep their promises? Right, you can't.
@@ -57,11 +59,12 @@ The first thing you need to do is to install the recursive DNS resolver:
 sudo apt install unbound
 ```
 
-**Important**: Download the current root hints file (the list of primary root servers which are serving the domain "." - the root domain). Update it roughly every six months. Note that this file changes infrequently.
+If you are installing unbound from a package manager, it should install the `root.hints` file automatically with the dependency `dns-root-data`. The root hints will then be automatically updated by your package manager.
+
+**Optional**: Download the current root hints file (the list of primary root servers which are serving the domain "." - the root domain). Update it roughly every six months. Note that this file changes infrequently. This is only necessary if you are not installing unbound from a package manager. If you do this optional step, you will need to uncomment the `root-hints:` configuration line in the suggested config file.
 
 ```bash
-wget -O root.hints https://www.internic.net/domain/named.root
-sudo mv root.hints /var/lib/unbound/
+wget https://www.internic.net/domain/named.root -qO- | sudo tee /var/lib/unbound/root.hints
 ```
 
 ### Configure `unbound`
@@ -75,7 +78,7 @@ Highlights:
 
 `/etc/unbound/unbound.conf.d/pi-hole.conf`:
 
-```ini
+```yaml
 server:
     # If no logfile is specified, syslog is used
     # logfile: "/var/log/unbound/unbound.log"
@@ -95,7 +98,8 @@ server:
     prefer-ip6: no
 
     # Use this only when you downloaded the list of primary root servers!
-    root-hints: "/var/lib/unbound/root.hints"
+    # If you use the default dns-root-data package, unbound will find it automatically
+    #root-hints: "/var/lib/unbound/root.hints"
 
     # Trust glue only if it is within the server's authority
     harden-glue: yes
@@ -133,7 +137,7 @@ server:
 Start your local recursive server and test that it's operational:
 
 ```bash
-sudo service unbound start
+sudo service unbound restart
 dig pi-hole.net @127.0.0.1 -p 5335
 ```
 
@@ -154,6 +158,82 @@ The first command should give a status report of `SERVFAIL` and no IP address. T
 
 Finally, configure Pi-hole to use your recursive DNS server by specifying `127.0.0.1#5335` as the Custom DNS (IPv4):
 
-![Upstream DNS Servers Configuration](../images/RecursiveResolver.png)
+![Upstream DNS Servers Configuration](/images/RecursiveResolver.png)
 
 (don't forget to hit Return or click on `Save`)
+
+### Disable `resolvconf` for `unbound` (optional)
+
+The `unbound` package can come with a systemd service called `unbound-resolvconf.service` and default enabled.
+It instructs `resolvconf` to write `unbound`'s own DNS service at `nameserver 127.0.0.1` , but without the 5335 port, into the file `/etc/resolv.conf`.
+That `/etc/resolv.conf` file is used by local services/processes to determine DNS servers configured.
+If you configured `/etc/dhcpcd.conf` with a `static domain_name_servers=` line, these DNS server(s) will be ignored/overruled by this service.
+
+To check if this service is enabled for your distribution, run below one and take note of the the `Active` line.
+It will show either `active` or `inactive` or it might not even be installed resulting in a `could not be found` message:
+
+```bash
+sudo systemctl status unbound-resolvconf.service
+```
+
+To disable the service if so desire, run below two:
+
+```bash
+sudo systemctl disable unbound-resolvconf.service
+```
+
+```bash
+sudo systemctl stop unbound-resolvconf.service
+```
+
+To have the `domain_name_servers=` in the file `/etc/dhcpcd.conf` activated/propagate, run below one:
+
+```bash
+sudo systemctl restart dhcpcd
+```
+
+And check with below one if IP(s) on the `nameserver` line(s) reflects the ones in the `/etc/dhcpcd.conf` file:
+
+```bash
+cat /etc/resolv.conf
+```
+
+### Add logging to unbound
+
+!!! warning
+    It's not recommended to increase verbosity for daily use, as unbound logs a lot. But it might be helpful for debugging purposes.
+
+There are five levels of verbosity
+
+```
+Level 0 means no verbosity, only errors
+Level 1 gives operational information
+Level 2 gives  detailed operational  information
+Level 3 gives query level information
+Level 4 gives  algorithm  level  information
+Level 5 logs client identification for cache misses
+```
+
+First, specify the log file and the verbosity level in the `server` part of
+`/etc/unbound/unbound.conf.d/pi-hole.conf`:
+
+```yaml
+server:
+    # If no logfile is specified, syslog is used
+    logfile: "/var/log/unbound/unbound.log"
+    verbosity: 1
+```
+
+Second, create log dir and file, set permissions:
+
+```
+sudo mkdir -p /var/log/unbound
+sudo touch /var/log/unbound/unbound.log
+sudo chown unbound /var/log/unbound/unbound.log
+```
+
+Third, restart unbound:
+
+```
+sudo service unbound restart
+```
