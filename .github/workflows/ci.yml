@@ -34,7 +34,7 @@ jobs:
           cache: npm
 
       - name: Cache Python dependencies
-        uses: actions/cache@v2
+        uses: actions/cache@v3.0.11
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/requirements.txt') }}
